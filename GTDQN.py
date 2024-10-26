@@ -4,11 +4,9 @@ import torch.nn.functional as F
 import numpy as np
 from collections import deque
 import random
-from typing import List, Dict, Tuple
+from typing import Dict, Tuple
 from Poker_Env import PokerEnv
 import copy 
-import CFRAgent
-import DQNAgent
 
 class PokerStateConverter:
     """Converts poker states into grid representations for CNN processing"""
@@ -116,10 +114,19 @@ class PokerGTDQN(nn.Module):
         
         return q_values, hidden
         
-    def update_regret(self, state_value, action_values):
-        """Update cumulative regret based on action outcomes"""
-        regret = action_values - state_value
-        self.cumulative_regret += F.relu(regret)
+    def update_regret(self, action, new_regret):
+        """Update regret values and ensure they are bounded."""
+        if action not in self.regret_values:
+            self.regret_values[action] = 0
+        
+        # Update regret with new value
+        self.regret_values[action] += new_regret
+        
+        # Apply bounding to regret values
+        self.regret_values[action] = np.clip(self.regret_values[action], -self.regret_bound, self.regret_bound)
+
+        # Optional: Return the updated regret for logging or further analysis
+        return self.regret_values[action]
         
     def get_mixed_strategy(self):
         """Calculate mixed strategy probabilities from regret"""
@@ -275,55 +282,3 @@ class GTDQNAgent:
         self.target_net.load_state_dict(checkpoint['target_net'])
         self.optimizer.load_state_dict(checkpoint['optimizer'])
         self.strategy_profile = checkpoint['strategy_profile']
-
-
-def test_agents():
-    """Test and compare the three agent types"""
-    env = PokerEnv(num_players=6)
-    state_converter = PokerStateConverter()
-    
-    # Initialize agents
-    gtdqn = GTDQNAgent(state_converter.grid_size, len(env.get_valid_actions({})))
-    cfr = CFRAgent(env)
-    dqn = DQNAgent(state_converter.grid_size, len(env.get_valid_actions({})))
-    
-    # Run test games
-    num_games = 1000
-    results = {
-        'gtdqn': 0,
-        'cfr': 0,
-        'dqn': 0
-    }
-    
-    for game in range(num_games):
-        env.reset()
-        while not env.game_active:
-            current_player = env.current_player
-            state = env.players[current_player]
-            
-            if current_player % 3 == 0:
-                action = gtdqn.act(state, env.get_valid_actions(state))
-            elif current_player % 3 == 1:
-                action = cfr.act(state)
-            else:
-                action = dqn.act(state, env)
-                
-            env.apply_action(current_player, action)
-        
-        # Record winner
-        winner = env.showdown()
-        if winner % 3 == 0:
-            results['gtdqn'] += 1
-        elif winner % 3 == 1:
-            results['cfr'] += 1
-        else:
-            results['dqn'] += 1
-    
-    return results
-
-if __name__ == "__main__":
-    results = test_agents()
-    print("\nTest Results:")
-    print(f"GT-DQN Wins: {results['gtdqn']}")
-    print(f"CFR Wins: {results['cfr']}")
-    print(f"DQN Wins: {results['dqn']}")

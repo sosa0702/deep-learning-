@@ -3,29 +3,32 @@ from collections import Counter
 from typing import List, Tuple, Dict, Optional
 
 class PokerEnv:
-    def __init__(self, num_players: int = 2, starting_chips: int = 1000, small_blind: int = 10):
+    def __init__(self, num_players: int = 2, starting_chips: int = 999):
         self.num_players = num_players
         self.starting_chips = starting_chips
-        self.small_blind = small_blind
-        self.big_blind = small_blind * 2
-        self.deck = self.create_deck()
+        self.chip_sizes = [1, 5, 10, 20, 50, 100]
+        self.chip_distribution = {
+            1: 405,
+            5: 243,
+            10: 162,
+            20: 108,
+            50: 54,
+            100: 27
+        }
+        self.pot = self.calculate_initial_pot()
         self.players = self.initialize_players()
         self.community_cards: List[Tuple[str, str]] = []
-        self.pot = 0
         self.current_bets = [0] * num_players
         self.round = 0
         self.max_rounds = 4  # Pre-Flop, Flop, Turn, River
         self.game_active = True
         self.button_pos = 0  # Dealer button position
         self.current_player = 0
-        self.min_raise = self.big_blind
+        self.min_raise = self.chip_sizes[1]  # Start with small blind (5)
 
-    def create_deck(self) -> List[Tuple[str, str]]:
-        suits = ['♥', '♦', '♣', '♠']  # Using unicode symbols for better readability
-        ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
-        deck = [(rank, suit) for suit in suits for rank in ranks]
-        random.shuffle(deck)
-        return deck
+    def calculate_initial_pot(self) -> int:
+        """Calculate initial pot size based on chip distribution."""
+        return sum(chip * count for chip, count in self.chip_distribution.items())
 
     def initialize_players(self) -> List[Dict]:
         return [{'hand': [], 
@@ -39,17 +42,17 @@ class PokerEnv:
         bb_pos = (self.button_pos + 2) % self.num_players
         
         # Post small blind
-        self.players[sb_pos]['chips'] -= self.small_blind
-        self.players[sb_pos]['bet'] = self.small_blind
-        self.pot += self.small_blind
+        self.players[sb_pos]['chips'] -= self.min_raise
+        self.players[sb_pos]['bet'] = self.min_raise
+        self.pot += self.min_raise
         
         # Post big blind
-        self.players[bb_pos]['chips'] -= self.big_blind
-        self.players[bb_pos]['bet'] = self.big_blind
-        self.pot += self.big_blind
+        self.players[bb_pos]['chips'] -= self.min_raise * 2
+        self.players[bb_pos]['bet'] = self.min_raise * 2
+        self.pot += self.min_raise * 2
         
         self.current_player = (bb_pos + 1) % self.num_players
-        self.min_raise = self.big_blind
+        self.min_raise = self.min_raise * 2  # For the next raise, it must be at least double the small blind
 
     def get_hand_rank_value(self, rank: str) -> int:
         """Convert card ranks to numerical values for comparison."""
@@ -266,20 +269,22 @@ class PokerEnv:
             player['hand'] = []
             player['bet'] = 0
             player['status'] = 'active' if player['chips'] > 0 else 'out'
+    
+    def adjust_game_state(self, epoch: int):
+        if epoch >= 10000:
+            self.chip_distribution = {
+                1: 15,
+                5: 9,
+                10: 6,
+                20: 4,
+                50: 2,
+                100: 1
+            }
+            self.pot = 400  # Set pot size after 10,000 epochs
+        else:
+            pass
 
     @staticmethod
     def format_cards(cards: List[Tuple[str, str]]) -> str:
         """Format cards for display."""
         return ' '.join(f"{rank}{suit}" for rank, suit in cards)
-
-# Example usage
-if __name__ == "__main__":
-    # Create and run a sample game
-    env = PokerEnv(num_players=4, starting_chips=1000, small_blind=10)
-    
-    for _ in range(3):  # Play 3 hands
-        env.play_round()
-        print("\nChip counts:")
-        for i, player in enumerate(env.players):
-            print(f"Player {i + 1}: ${player['chips']}")
-        print("\n" + "="*50 + "\n")
